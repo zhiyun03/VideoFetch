@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抖音视频去水印下载</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        #videoInfo {
+            display: none;
+        }
+
+        #preview {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .download-btn {
+            background-color: #1677ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 8px 16px;
+            margin-top: 5px;
+        }
+        
+        .download-btn:hover {
+            background-color: #4096ff;
+        }
+        
+        #loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>抖音视频去水印下载</h1>
+        <input type="password" id="password" placeholder="请输入密码 (123456)">
+        <input type="text" id="shareLink" placeholder="请粘贴抖音分享链接">
+        <button onclick="parseVideo()">开始解析</button>
+        <div id="loading">正在解析视频信息...</div>
+        <div id="videoInfo">
+            <h2>视频信息</h2>
+            <p><strong>标题:</strong> <span id="title"></span></p>
+            <p><strong>视频下载:</strong> <button class="download-btn" id="downloadVideoBtn">下载视频</button></p>
+            <p><strong>封面下载:</strong> <button class="download-btn" id="downloadCoverBtn">下载封面</button></p>
+            <img id="preview" src="" alt="封面预览">
+        </div>
+    </div>
+
+    <script>
+        // 存储解析出的视频和封面信息
+        let currentVideoInfo = {
+            title: '',
+            videoUrl: '',
+            coverUrl: ''
+        };
+        
+        async function parseVideo() {
+            const password = document.getElementById('password').value;
+            if (password !== '123456') {
+                alert('密码错误，请输入正确的密码 (123456)');
+                return;
+            }
+
+            const shareLink = document.getElementById('shareLink').value;
+            if (!shareLink) {
+                alert('请输入抖音分享链接');
+                return;
+            }
+
+            // 提取HTTP/HTTPS链接
+            const urlMatch = shareLink.match(/https?:\/\/[^\s]+/);
+            if (!urlMatch) {
+                alert('未找到有效的链接');
+                return;
+            }
+            const url = urlMatch[0];
+
+            try {
+                // 显示加载状态
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('videoInfo').style.display = 'none';
+
+                // 获取aweme_id
+                const awemeIdResponse = await fetch(`http://167.172.216.220/api/douyin/web/get_aweme_id?url=${encodeURIComponent(url)}`);
+                const awemeIdData = await awemeIdResponse.json();
+                const awemeId = awemeIdData.data;
+
+                // 获取视频信息
+                const videoInfoResponse = await fetch(`http://167.172.216.220/api/douyin/web/fetch_one_video?aweme_id=${awemeId}`);
+                const videoInfoData = await videoInfoResponse.json();
+
+                // 提取所需信息
+                currentVideoInfo.title = videoInfoData.data.aweme_detail.desc;
+                currentVideoInfo.videoUrl = videoInfoData.data.aweme_detail.video.play_addr.url_list[0];
+                currentVideoInfo.coverUrl = videoInfoData.data.aweme_detail.video.cover.url_list[0];
+
+                // 显示信息
+                document.getElementById('title').textContent = currentVideoInfo.title;
+                document.getElementById('preview').src = currentVideoInfo.coverUrl;
+                document.getElementById('videoInfo').style.display = 'block';
+            } catch (error) {
+                console.error('解析失败:', error);
+                alert('解析失败，请检查链接是否正确');
+            } finally {
+                // 隐藏加载状态
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        // 下载视频文件
+        document.getElementById('downloadVideoBtn').addEventListener('click', async function() {
+            if (!currentVideoInfo.videoUrl) {
+                alert('请先解析视频信息');
+                return;
+            }
+            
+            try {
+                // 显示加载状态
+                this.textContent = '下载中...';
+                this.disabled = true;
+                
+                // 尝试直接下载，如果失败则使用代理方式
+                await tryDirectDownload(currentVideoInfo.videoUrl, this);
+                
+            } catch (error) {
+                console.error('下载失败:', error);
+                alert('直接下载失败，尝试使用备用方式...');
+                
+                try {
+                    // 尝试使用代理方式下载
+                    window.open(currentVideoInfo.videoUrl, '_blank');
+                } catch (proxyError) {
+                    console.error('代理下载也失败:', proxyError);
+                    alert('下载失败，请尝试直接复制视频链接到浏览器打开:\n' + currentVideoInfo.videoUrl);
+                }
+            } finally {
+                // 恢复按钮状态
+                this.textContent = '下载视频';
+                this.disabled = false;
+            }
+        });
+        
+        // 直接下载函数
+        async function tryDirectDownload(videoUrl, button) {
+            try {
+                // 使用fetch API获取视频数据，调整跨域设置
+                const response = await fetch(videoUrl, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Referer': 'https://www.douyin.com/',
+                    },
+                    // 移除可能导致跨域问题的设置
+                    mode: 'no-cors'
+                });
+                
+                // 对于no-cors模式，我们无法检查response.ok
+                // 但我们可以尝试获取blob
+                const blob = await response.blob();
+                
+                // 验证blob大小是否合理
+                if (blob.size < 1000) { // 如果太小，可能是错误页面
+                    throw new Error('下载的文件可能不是有效的视频');
+                }
+                
+                // 创建下载链接
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // 设置下载文件名
+                const safeTitle = currentVideoInfo.title.replace(/[\\/:*?"<>|]/g, '_').substring(0, 50);
+                a.download = `${safeTitle}.mp4`;
+                
+                // 触发下载
+                document.body.appendChild(a);
+                a.click();
+                
+                // 清理
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+                
+            } catch (error) {
+                console.error('直接下载出错:', error);
+                throw error;
+            }
+        }
+        
+        // 下载封面文件
+        document.getElementById('downloadCoverBtn').addEventListener('click', async function() {
+            if (!currentVideoInfo.coverUrl) {
+                alert('请先解析视频信息');
+                return;
+            }
+            
+            try {
+                // 显示加载状态
+                this.textContent = '下载中...';
+                this.disabled = true;
+                
+                // 使用fetch API获取封面数据
+                const response = await fetch(currentVideoInfo.coverUrl, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Referer': 'https://www.douyin.com/',
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP错误! 状态码: ${response.status}`);
+                }
+                
+                // 获取二进制数据
+                const blob = await response.blob();
+                
+                // 创建下载链接
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // 设置下载文件名
+                const safeTitle = currentVideoInfo.title.replace(/[\\/:*?"<>|]/g, '_').substring(0, 50);
+                a.download = `${safeTitle}_cover.jpg`;
+                
+                // 触发下载
+                document.body.appendChild(a);
+                a.click();
+                
+                // 清理
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
+                
+            } catch (error) {
+                console.error('下载失败:', error);
+                alert('下载失败，请稍后重试');
+            } finally {
+                // 恢复按钮状态
+                this.textContent = '下载封面';
+                this.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
